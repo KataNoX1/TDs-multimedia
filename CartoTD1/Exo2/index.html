@@ -139,12 +139,6 @@
           updateUI(pos);
         }
       );
-
-      navigator.geolocation.watchPosition(
-        (pos) => {
-          updateUI(pos);
-        }
-      );
     }
 
     marnicLine.on("click", () => {
@@ -152,6 +146,36 @@
       const d = L.latLng(MARSEILLE.lat, MARSEILLE.lon).distanceTo(p);
       marnicLine.bindPopup("Distance Marseille -> vous: " + km(d) + " km").openPopup();
     });
+
+    const layer = L.geoJSON(null, {
+      pointToLayer: (feature, latlng) => L.circleMarker(latlng, { radius: 5 }),
+      onEachFeature: (feature, l) => {
+        const p = feature.properties || {};
+        // site name
+        const site = p.site;
+        // country
+        const country = p.pays;
+        // unesco link
+        const link = p.url;
+
+        let html = "<b>" + site + "</b>";
+        if (country) html += "<br>" + country;
+        if (link)    html += '<br><a href="' + link + '" target="_blank" rel="noopener">UNESCO page</a>';
+        l.bindPopup(html);
+      }
+    }).addTo(map);
+
+    const url = "https://userclub.opendatasoft.com/api/records/1.0/search/?dataset=world-heritage-list0&rows=10000&format=geojson";
+
+    fetch(url)
+      .then(r => r.json())
+      .then(gj => {
+        layer.addData(gj);
+        try {
+          const b = layer.getBounds();
+          if (b.isValid()) map.fitBounds(b, { padding: [20, 20] });
+        } catch(e) {}
+      })
   </script>
 </body>
 </html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Exercice 1 - Geolocalisation</title>
+</head>
+<body>
+  <h1>Test Geolocalisation</h1>
+
+  <h2>getCurrentPosition()</h2>
+  <pre id="current"></pre>
+
+  <h2>watchPosition()</h2>
+  <pre id="watch"></pre>
+
+  <script>
+    // fonction utilitaire
+    function formatPosition(pos) {
+      const coords = pos.coords;
+      const date = new Date(pos.timestamp);
+      return (
+        "Latitude: " + coords.latitude + "\n" +
+        "Longitude: " + coords.longitude + "\n" +
+        "Altitude: " + (coords.altitude !== null ? coords.altitude : "non disponible") + "\n" +
+        "Precision: " + coords.accuracy + " m\n" +
+        "Vitesse: " + (coords.speed !== null ? coords.speed : "non disponible") + "\n" +
+        "Date: " + date.toString()
+      );
+    }
+
+    // getCurrentPosition
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          document.getElementById("current").textContent = formatPosition(pos);
+        },
+        (err) => {
+          document.getElementById("current").textContent = "Erreur: " + err.message;
+        }
+      );
+
+      // watchPosition
+      navigator.geolocation.watchPosition(
+        (pos) => {
+          document.getElementById("watch").textContent = formatPosition(pos);
+        },
+        (err) => {
+          document.getElementById("watch").textContent = "Erreur: " + err.message;
+        }
+      );
+    } else {
+      document.getElementById("current").textContent = "Geolocalisation non supportee.";
+      document.getElementById("watch").textContent = "Geolocalisation non supportee.";
+    }
+  </script>
+</body>
+</html>

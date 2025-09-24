@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Exercice 2 - Leaflet</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- Leaflet CSS -->
+
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -30,28 +30,25 @@
       accuracy: <span id="acc">-</span> m</div>
     <div class="row">timestamp: <span id="ts">-</span></div>
     <div class="row"><strong>Distance Marseille -> vous</strong>: <span id="dist">-</span> km</div>
-    <div class="row">Astuce: tester en local via <code>python3 -m http.server</code> puis ouvrir <code>http://localhost:8000/</code></div>
   </div>
 
-  <!-- Leaflet JS -->
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     crossorigin=""
   ></script>
 
   <script>
-    // coords utiles
+    // Nice et Marseille
     const NICE = { lat: 43.7000, lon: 7.2667 };
     const MARSEILLE = { lat: 43.2965, lon: 5.3698 };
 
-    // triangle des Bermudes (Miami, Bermuda, San Juan)
+    // triangle des Bermudes
     const BERMUDAS = [
       [25.7617, -80.1918],   // Miami
       [32.3078, -64.7505],   // Bermuda
       [18.4655, -66.1057]    // San Juan PR
     ];
 
-    // helpers UI
     const ui = {
       lat: document.getElementById("lat"),
       lon: document.getElementById("lon"),
@@ -65,45 +62,39 @@
     function fmt(n, d = 5) { return (n === null || n === undefined) ? "n/a" : Number(n).toFixed(d); }
     function km(m) { return (m / 1000).toFixed(3); }
 
-    // base layers
     const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "&copy; OpenStreetMap"
     });
 
-    // Stamen toner (exigence: changer de carte)
-    const stamenToner = L.tileLayer("https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png", {
+    const stamenTerrain = L.tileLayer("s3://tile.stamen.com/terrain/{z}/{x}/{y}.png", {
       maxZoom: 20,
-      attribution: "Map tiles by Stamen; Data &copy; OpenStreetMap"
+      attribution: "Map tiles by Stamen Design, under CC BY 4.0. Data by OpenStreetMap, under ODbL."
     });
 
-    // init carte (fallback centree sur Nice si geo non dispo)
+    // carte
     const map = L.map("map", {
       center: [NICE.lat, NICE.lon],
       zoom: 12,
       layers: [osm]
     });
 
-    // control couche
+
     const baseLayers = {
       "OpenStreetMap": osm,
-      "Stamen Toner": stamenToner
+      "Stamen Terrain": stamenTerrain
     };
     L.control.layers(baseLayers, null, { position: "topright", collapsed: true }).addTo(map);
 
-    // marqueur Nice
     const niceMarker = L.marker([NICE.lat, NICE.lon]).addTo(map).bindPopup("Nice (centre)");
 
-    // segment Marseille - Nice
     const mnLine = L.polyline([[MARSEILLE.lat, MARSEILLE.lon], [NICE.lat, NICE.lon]], { color: "blue" }).addTo(map)
       .bindPopup("Segment Marseille - Nice");
 
-    // triangle des Bermudes (ferme la boucle)
     const bermPolygon = L.polygon([BERMUDAS[0], BERMUDAS[1], BERMUDAS[2]], { color: "red", weight: 2, fillOpacity: 0.05 })
       .addTo(map)
       .bindPopup("Triangle des Bermudes");
 
-    // elements pour position utilisateur
     const youMarker = L.marker([NICE.lat, NICE.lon], { draggable: false });
     const accCircle = L.circle([NICE.lat, NICE.lon], { radius: 1, color: "green", fillOpacity: 0.1 });
     const youGroup = L.layerGroup([youMarker, accCircle]).addTo(map);

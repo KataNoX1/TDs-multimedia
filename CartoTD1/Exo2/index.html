@@ -97,82 +97,60 @@
     L.control.layers(baseLayers, null, { position: "topright", collapsed: true }).addTo(map);
 
 
+    const marMarker = L.marker([MARSEILLE.lat, MARSEILLE.lon]).addTo(map).bindPopup("Marseille");
+    const nicMarker = L.marker([NICE.lat, NICE.lon]).addTo(map).bindPopup("Nice");
 
-    const niceMarker = L.marker([NICE.lat, NICE.lon]).addTo(map).bindPopup("Nice (centre)");
-
-    const mnLine = L.polyline([[MARSEILLE.lat, MARSEILLE.lon], [NICE.lat, NICE.lon]], { color: "blue" }).addTo(map)
+    const marnicLine = L.polyline([[MARSEILLE.lat, MARSEILLE.lon], [NICE.lat, NICE.lon]], { color: "blue" }).addTo(map)
       .bindPopup("Segment Marseille - Nice");
 
     const bermPolygon = L.polygon([BERMUDAS[0], BERMUDAS[1], BERMUDAS[2]], { color: "red", weight: 2, fillOpacity: 0.05 })
       .addTo(map)
       .bindPopup("Triangle des Bermudes");
 
-    const youMarker = L.marker([NICE.lat, NICE.lon], { draggable: false });
-    const accCircle = L.circle([NICE.lat, NICE.lon], { radius: 1, color: "green", fillOpacity: 0.1 });
-    const youGroup = L.layerGroup([youMarker, accCircle]).addTo(map);
-
-    let firstFix = true;
+    
 
     function updateUI(pos) {
-      const c = pos.coords;
-      ui.lat.textContent = fmt(c.latitude, 6);
-      ui.lon.textContent = fmt(c.longitude, 6);
-      ui.alt.textContent = (c.altitude === null ? "n/a" : fmt(c.altitude, 1) + " m");
-      ui.spd.textContent = (c.speed === null ? "n/a" : fmt(c.speed, 2) + " m/s");
-      ui.acc.textContent = fmt(c.accuracy, 1);
+        const c = pos.coords;
+        ui.lat.textContent = fmt(c.latitude, 6);
+        ui.lon.textContent = fmt(c.longitude, 6);
+        ui.alt.textContent = (c.altitude === null ? "n/a" : fmt(c.altitude, 1) + " m");
+        ui.spd.textContent = (c.speed === null ? "n/a" : fmt(c.speed, 2) + " m/s");
+        ui.acc.textContent = fmt(c.accuracy, 1);
 
-      const dt = new Date(pos.timestamp);
-      ui.ts.textContent = dt.toISOString();
+        const date_ts = new Date(pos.timestamp);
+        ui.ts.textContent = date_ts.toISOString();
 
-      const d = L.latLng(MARSEILLE.lat, MARSEILLE.lon).distanceTo([c.latitude, c.longitude]);
-      ui.dist.textContent = km(d);
+        const d = L.latLng(MARSEILLE.lat, MARSEILLE.lon).distanceTo([c.latitude, c.longitude]);
+        ui.dist.textContent = km(d);
 
-      // maj marker + cercle
-      youMarker.setLatLng([c.latitude, c.longitude]).bindPopup("Vous");
-      accCircle.setLatLng([c.latitude, c.longitude]).setRadius(c.accuracy || 1);
+        const meMarker = L.marker([c.latitude, c.longitude], { draggable: false }).bindPopup("Moi");
+        const accCircle = L.circle([c.latitude, c.longitude], { radius: c.accuracy, color: "green", fillOpacity: 0.1 });
+        const meGroup = L.layerGroup([meMarker, accCircle]).addTo(map);
 
-      if (firstFix) {
+        const marmeLine = L.polyline([[MARSEILLE.lat, MARSEILLE.lon], [c.latitude, c.longitude]], { color: "orange", dashArray: "5,5" }).addTo(map).bindPopup("Segment Marseille - Moi");
+
         map.setView([c.latitude, c.longitude], 14, { animate: true });
-        firstFix = false;
-      }
     }
 
-    function onGeoError(err) {
-      console.warn("Geolocation error:", err.message);
-      // affiche un popup informatif
-      L.popup()
-        .setLatLng(map.getCenter())
-        .setContent("Geolocation non disponible: " + err.message + "<br/>Fallback centre: Nice.")
-        .openOn(map);
-    }
 
-    // getCurrentPosition (one-shot)
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           updateUI(pos);
-        },
-        onGeoError,
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        }
       );
 
-      // watchPosition (live updates)
       navigator.geolocation.watchPosition(
         (pos) => {
           updateUI(pos);
-        },
-        onGeoError,
-        { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
+        }
       );
-    } else {
-      onGeoError({ message: "API geolocation non supportee" });
     }
 
-    // popup distance Marseille -> vous (clic sur la ligne)
-    mnLine.on("click", () => {
-      const p = youMarker.getLatLng();
+    marnicLine.on("click", () => {
+      const p = meMarker.getLatLng();
       const d = L.latLng(MARSEILLE.lat, MARSEILLE.lon).distanceTo(p);
-      mnLine.bindPopup("Distance Marseille -> vous: " + km(d) + " km").openPopup();
+      marnicLine.bindPopup("Distance Marseille -> vous: " + km(d) + " km").openPopup();
     });
   </script>
 </body>

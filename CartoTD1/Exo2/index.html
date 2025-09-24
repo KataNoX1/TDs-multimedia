@@ -173,6 +173,36 @@
           if (b.isValid()) map.fitBounds(b, { padding: [20, 20] });
         } catch(e) {}
       })
+    
+
+      
+    const MAPBOX_TOKEN="pk.eyJ1IjoiY3YwNiIsImEiOiJjajg2MmpzYjcwbWdnMzNsc2NzM2l4eW0yIn0.TfDJipR5II7orUZaC848YA";
+
+    const osrmRouteLayer=L.geoJSON(null,{style:{color:"#000000",weight:4,opacity:0.8}}).addTo(map);
+    const mapboxRouteLayer=L.geoJSON(null,{style:{color:"#1565c0",weight:3,opacity:0.8}}).addTo(map);
+
+    function routeOsrm(wps){
+    const coords=wps.map(p=>p[1]+","+p[0]).join(";");
+    const url="https://router.project-osrm.org/route/v1/driving/"+coords+"?overview=full&geometries=geojson";
+    fetch(url).then(r=>r.json()).then(d=>{
+        osrmRouteLayer.clearLayers();
+        osrmRouteLayer.addData({type:"Feature",geometry:d.routes[0].geometry,properties:{}});
+        try{map.fitBounds(osrmRouteLayer.getBounds(),{padding:[20,20]});}catch(e){}
+    }).catch(()=>{});
+    }
+
+    function routeMapbox(wps){
+    const coords=wps.map(p=>p[1]+","+p[0]).join(";");
+    const url="https://api.mapbox.com/directions/v5/mapbox/driving/"+coords+"?alternatives=false&geometries=geojson&overview=full&access_token="+encodeURIComponent(MAPBOX_TOKEN);
+    fetch(url).then(r=>r.json()).then(d=>{
+        mapboxRouteLayer.clearLayers();
+        mapboxRouteLayer.addData({type:"Feature",geometry:d.routes[0].geometry,properties:{}});
+    }).catch(()=>{});
+    }
+
+    const waypoints=[[43.2965,5.3698],[43.1242,5.9280],[43.7000,7.2667]];
+    routeOsrm(waypoints);
+    routeMapbox(waypoints);
   </script>
 </body>
 </html>

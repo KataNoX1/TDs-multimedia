@@ -151,11 +151,8 @@
       pointToLayer: (feature, latlng) => L.circleMarker(latlng, { radius: 5 }),
       onEachFeature: (feature, l) => {
         const p = feature.properties || {};
-        // site name
         const site = p.site;
-        // country
         const country = p.pays;
-        // unesco link
         const link = p.url;
 
         let html = "<b>" + site + "</b>";

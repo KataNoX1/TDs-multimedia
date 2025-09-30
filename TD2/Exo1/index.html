@@ -144,7 +144,9 @@
         //Fonction d'animation
         function animate() {
             renderer.render( scene, camera );
-            if (!isMobile()) controls.update();
+            if (isMobile()) handleOrientation();
+            else controls.update();
+
         }
         renderer.setAnimationLoop( animate );
     </script>

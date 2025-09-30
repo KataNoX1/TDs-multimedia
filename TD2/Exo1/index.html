@@ -108,11 +108,6 @@
 
 
         //DeviceEvent
-        function isMobile() {
-            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        }
-        const onMobile = isMobile();
-
         let target = camera;
         
         let alpha = 0, beta = 0, gamma = 0;
@@ -129,11 +124,10 @@
         //Fonction d'animation
         function animate() {
             renderer.render( scene, camera );
-            if (onMobile) {
-                target.rotation.x = beta * (Math.PI / 180);
-                target.rotation.y = gamma * (Math.PI / 180);
-                target.rotation.z = alpha * (Math.PI / 180);
-            } else controls.update();
+            target.rotation.x = beta * (Math.PI / 180);
+            target.rotation.y = gamma * (Math.PI / 180);
+            target.rotation.z = alpha * (Math.PI / 180);
+            controls.update();
         }
         renderer.setAnimationLoop( animate );
     </script>

@@ -155,7 +155,7 @@
 
         //Fonction d'animation
         function animate() {
-            if (isMobileLike()) applyOrientationTo(mesh);
+            if (isMobileLike()) applyOrientationTo(scene.camera);
             renderer.render( scene, camera );
             controls.update();
         }

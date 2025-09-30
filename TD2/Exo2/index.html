@@ -69,15 +69,44 @@
         ground.receiveShadows = true;
 
         return scene;
-      };
+        };
 
-      const scene = createScene();
+        function isPhone() {
+            return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
 
-      engine.runRenderLoop(() => {
-        scene.render();
-      });
+        window.addEventListener("deviceorientation", (e) => {
+            if (e.alpha == null) return;
+                hasOri = true;
+                A = e.alpha;
+                B = e.beta;
+                G = e.gamma;
+        }, true);
 
-      window.addEventListener("resize", () => engine.resize());
+        function applyPhoneToArcCam(cam) {
+            const deg2rad = Math.PI / 180;
+            const targetAlpha = A * deg2rad;
+            const targetBeta  = (B + 90) * deg2rad;
+
+            const minB = 0.15, maxB = Math.PI * 0.85;
+            const clampedBeta = Math.min(Math.max(targetBeta, minB), maxB);
+
+            const s = 0.15;
+            cam.alpha = cam.alpha + (targetAlpha - cam.alpha) * s;
+            cam.beta  = cam.beta  + (clampedBeta  - cam.beta ) * s;
+        }
+
+        const scene = createScene();
+
+        engine.runRenderLoop(() => {
+            if (isPhone()) {
+                applyPhoneToArcCam(scene.activeCamera);
+            }
+            
+            scene.render();
+        });
+
+        window.addEventListener("resize", () => engine.resize());
     </script>
   </body>
 </html>

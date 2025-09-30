@@ -108,14 +108,18 @@
 
 
         //DeviceEvent
+        function isPhone() {
+            return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
         let gyroRotation = { x: 0, y: 0, z: 0 };
 
         function handleOrientation(event) {
             const { alpha, beta, gamma } = event;
             if (alpha !== null && beta !== null && gamma !== null) {
-                gyroRotation.x = THREE.MathUtils.degToRad(beta - 90);
+                gyroRotation.x = THREE.MathUtils.degToRad(gamma);
                 gyroRotation.y = THREE.MathUtils.degToRad(alpha);
-                gyroRotation.z = 0;
+                gyroRotation.z = THREE.MathUtils.degToRad(beta);
             }
         }
 
@@ -125,9 +129,13 @@
         //Fonction d'animation
         function animate() {
             renderer.render( scene, camera );
-            camera.rotation.x = gyroRotation.x;
-            camera.rotation.y = gyroRotation.y;
-            camera.rotation.z = gyroRotation.z;
+            if (!isPhone()) {
+                controls.update();
+            } else {
+                camera.rotation.x = gyroRotation.x;
+                camera.rotation.y = gyroRotation.y;
+                camera.rotation.z = gyroRotation.z;
+            }
         }
         renderer.setAnimationLoop( animate );
 

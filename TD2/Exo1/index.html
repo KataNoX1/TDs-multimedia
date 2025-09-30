@@ -114,6 +114,8 @@
 
         window.addEventListener("deviceorientation", handleOrientation, true);
 
+        let target = camera;
+        
         let absolute = 0, alpha = 0, beta = 0, gamma = 0; // deg
         
         const tmpEuler = new THREE.Euler(0, 0, 0, "YXZ");

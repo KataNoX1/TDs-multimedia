@@ -44,6 +44,12 @@
         scene.add( ambient );
 
 
+        //Fog
+        const color = 0xFFFFFF;
+        const density = 0.1;
+        scene.fog = new THREE.FogExp2(color, density);
+
+
         //Sol
         const ground = new THREE.Mesh(
 					new THREE.PlaneGeometry( 9, 9, 1, 1 ),
@@ -69,7 +75,6 @@
         //Phoque
         ObjectLoader.load('./bagel_seal.glb', function ( gltf ) {
             const model = gltf.scene;
-            model.position.z = 0;
             model.position.y = 1.23;
             model.rotation.y = 11*Math.PI/6;
             model.traverse( function ( object ) {
@@ -98,9 +103,59 @@
         controls.rotateSpeed = 0.5;
         controls.panSpeed = 0.5; 
         
+        controls.minDistance = 2;
+        controls.maxDistance = 10;
+
+
+        //DeviceEvent
+        function isMobileLike() {
+            // UA-CH first (Chrome/Edge modern)
+            if (navigator.userAgentData && typeof navigator.userAgentData.mobile === "boolean") {
+                return navigator.userAgentData.mobile;
+            }
+            // fallback on UA + iPadOS quirk + coarse pointer hint
+            const ua = navigator.userAgent || "";
+            if (/Mobi|Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry/i.test(ua)) return true;
+            const isIPadOS = /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
+            if (isIPadOS) return true;
+            if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) return true;
+            return false;
+}
+
+        function enableSensorsIfNeeded() {
+            const need = typeof DeviceOrientationEvent !== "undefined"
+                && typeof DeviceOrientationEvent.requestPermission === "function";
+            if (!need) return;
+            DeviceOrientationEvent.requestPermission().catch(()=>{});
+            if (typeof DeviceMotionEvent !== "undefined"
+                && typeof DeviceMotionEvent.requestPermission === "function") {
+                DeviceMotionEvent.requestPermission().catch(()=>{});
+            }
+        }
+        document.addEventListener("click", enableSensorsIfNeeded, { once: true });
+
+        let alpha = 0, beta = 0, gamma = 0; // deg
+        window.addEventListener("deviceorientation", (e) => {
+            if (e.alpha == null) return;
+            alpha = e.alpha; // yaw
+            beta  = e.beta;  // pitch
+            gamma = e.gamma; // roll
+        }, true);
+
+        const tmpEuler = new THREE.Euler(0, 0, 0, "YXZ");
+        function applyOrientationTo(obj) {
+            tmpEuler.set(
+                THREE.MathUtils.degToRad(beta),
+                THREE.MathUtils.degToRad(alpha),
+                THREE.MathUtils.degToRad(-gamma),
+                "YXZ"
+            );
+            obj.quaternion.setFromEuler(tmpEuler);
+        }
 
         //Fonction d'animation
         function animate() {
+            if (isMobileLike()) applyOrientationTo(mesh);
             renderer.render( scene, camera );
             controls.update();
         }

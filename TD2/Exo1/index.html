@@ -120,7 +120,7 @@
             if (isIPadOS) return true;
             if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) return true;
             return false;
-}
+        }
 
         function enableSensorsIfNeeded() {
             const need = typeof DeviceOrientationEvent !== "undefined"
@@ -155,7 +155,7 @@
 
         //Fonction d'animation
         function animate() {
-            if (isMobileLike()) applyOrientationTo(scene.camera);
+            if (isMobileLike()) applyOrientationTo(camera);
             renderer.render( scene, camera );
             controls.update();
         }

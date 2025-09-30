@@ -108,6 +108,11 @@
 
 
         //DeviceEvent
+        function isMobile() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+        const onMobile = isMobile();
+
         let target = camera;
         
         let alpha = 0, beta = 0, gamma = 0;
@@ -117,17 +122,16 @@
             beta = event.beta;
             gamma = event.gamma;
         }, true);
-
-        if (isMobile() && typeof controls !== "undefined" && controls) controls.enabled = false;
-
+        
 
         //Fonction d'animation
         function animate() {
             renderer.render( scene, camera );
-            target.rotation.x = beta * (Math.PI / 180);
-            target.rotation.y = gamma * (Math.PI / 180);
-            target.rotation.z = alpha * (Math.PI / 180);
-            controls.update();
+            if (onMobile) {
+                target.rotation.x = beta * (Math.PI / 180);
+                target.rotation.y = gamma * (Math.PI / 180);
+                target.rotation.z = alpha * (Math.PI / 180);
+            } else controls.update();
         }
         renderer.setAnimationLoop( animate );
     </script>

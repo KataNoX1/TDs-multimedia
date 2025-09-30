@@ -117,7 +117,7 @@
         function handleOrientation(event) {
             const { alpha, beta, gamma } = event;
             if (alpha !== null && beta !== null && gamma !== null) {
-                gyroRotation.x = THREE.MathUtils.degToRad(gamma);
+                gyroRotation.x = 0;
                 gyroRotation.y = THREE.MathUtils.degToRad(alpha);
                 gyroRotation.z = THREE.MathUtils.degToRad(beta);
             }

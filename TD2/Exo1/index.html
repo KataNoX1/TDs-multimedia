@@ -155,8 +155,8 @@
 
         //Fonction d'animation
         function animate() {
-            if (isMobileLike()) applyOrientationTo(camera);
             renderer.render( scene, camera );
+            if (isMobileLike()) applyOrientationTo(camera);
             controls.update();
         }
         renderer.setAnimationLoop( animate );

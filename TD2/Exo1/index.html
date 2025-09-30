@@ -108,56 +108,43 @@
 
 
         //DeviceEvent
-        function isMobileLike() {
-            // UA-CH first (Chrome/Edge modern)
-            if (navigator.userAgentData && typeof navigator.userAgentData.mobile === "boolean") {
-                return navigator.userAgentData.mobile;
-            }
-            // fallback on UA + iPadOS quirk + coarse pointer hint
-            const ua = navigator.userAgent || "";
-            if (/Mobi|Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry/i.test(ua)) return true;
-            const isIPadOS = /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
-            if (isIPadOS) return true;
-            if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) return true;
-            return false;
+        function isMobile() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         }
 
-        function enableSensorsIfNeeded() {
-            const need = typeof DeviceOrientationEvent !== "undefined"
-                && typeof DeviceOrientationEvent.requestPermission === "function";
-            if (!need) return;
-            DeviceOrientationEvent.requestPermission().catch(()=>{});
-            if (typeof DeviceMotionEvent !== "undefined"
-                && typeof DeviceMotionEvent.requestPermission === "function") {
-                DeviceMotionEvent.requestPermission().catch(()=>{});
-            }
-        }
-        document.addEventListener("click", enableSensorsIfNeeded, { once: true });
+        window.addEventListener("deviceorientation", handleOrientation, true);
 
-        let alpha = 0, beta = 0, gamma = 0; // deg
-        window.addEventListener("deviceorientation", (e) => {
-            if (e.alpha == null) return;
-            alpha = e.alpha; // yaw
-            beta  = e.beta;  // pitch
-            gamma = e.gamma; // roll
-        }, true);
-
+        let absolute = 0, alpha = 0, beta = 0, gamma = 0; // deg
+        
         const tmpEuler = new THREE.Euler(0, 0, 0, "YXZ");
-        function applyOrientationTo(obj) {
+        const tmpQuat = new THREE.Quaternion();
+        const screenQuat = new THREE.Quaternion();
+        const zAxis = new THREE.Vector3(0, 0, 1);
+
+        function handleOrientation(event) {
+            if (event.alpha == null) return;
+            absolute = !!event.absolute;
+            alpha = event.alpha || 0;
+            beta  = event.beta  || 0;
+            gamma = event.gamma || 0;
+
             tmpEuler.set(
-                THREE.MathUtils.degToRad(beta),
-                THREE.MathUtils.degToRad(alpha),
-                THREE.MathUtils.degToRad(-gamma),
-                "YXZ"
+            THREE.MathUtils.degToRad(beta),   // pitch -> X
+            THREE.MathUtils.degToRad(alpha),  // yaw   -> Y
+            THREE.MathUtils.degToRad(-gamma), // roll  -> Z (sign flip)
+            "YXZ"
             );
-            obj.quaternion.setFromEuler(tmpEuler);
+            tmpQuat.setFromEuler(tmpEuler);
+            if (target && target.quaternion) {
+                target.quaternion.slerp(tmpQuat, 0.25); // 0..1 smoothing
+            }
         }
+        window.addEventListener("deviceorientation", handleOrientation, true);
 
         //Fonction d'animation
         function animate() {
             renderer.render( scene, camera );
-            if (isMobileLike()) applyOrientationTo(camera);
-            controls.update();
+            if (!isMobile()) controls.update();
         }
         renderer.setAnimationLoop( animate );
     </script>

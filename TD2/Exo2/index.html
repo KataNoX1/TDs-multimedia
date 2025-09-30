@@ -74,7 +74,11 @@
         function isPhone() {
             return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         }
+        let onPhone = isPhone();
 
+
+        let hasOri = false;
+        let A = 0, B = 0, G = 0;
         window.addEventListener("deviceorientation", (e) => {
             if (e.alpha == null) return;
                 hasOri = true;
@@ -99,7 +103,7 @@
         const scene = createScene();
 
         engine.runRenderLoop(() => {
-            if (isPhone()) {
+            if (onPhone) {
                 applyPhoneToArcCam(scene.activeCamera);
             }
             

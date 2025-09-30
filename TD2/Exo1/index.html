@@ -115,23 +115,34 @@
 
         let target = camera;
         
+        let hasOri = false;
         let alpha = 0, beta = 0, gamma = 0;
 
         window.addEventListener('deviceorientation', (event) => {
+            if (!event || event.alpha == null || event.beta == null || event.gamma == null) return;
+            hasOri = true;
             alpha = event.alpha
             beta = event.beta;
             gamma = event.gamma;
         }, true);
-        
+
+        if (onMobile && typeof controls !== "undefined" && controls) controls.enabled = false;
+
 
         //Fonction d'animation
         function animate() {
             renderer.render( scene, camera );
             if (onMobile) {
-                target.rotation.x = beta * (Math.PI / 180);
+                if (hasOri) {
+                target.rotation.x = beta  * (Math.PI / 180);
                 target.rotation.y = gamma * (Math.PI / 180);
                 target.rotation.z = alpha * (Math.PI / 180);
-            } else controls.update();
+                } else {
+                if (typeof controls !== "undefined" && controls) controls.update();
+                }
+            } else {
+                if (typeof controls !== "undefined" && controls) controls.update();
+            }
         }
         renderer.setAnimationLoop( animate );
     </script>

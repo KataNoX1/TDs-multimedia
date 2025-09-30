@@ -146,8 +146,11 @@
         //Fonction d'animation
         function animate() {
             renderer.render( scene, camera );
-            if (isMobile()) applyLatestOrientation();
-            else controls.update();
+            if (isMobile()) {
+                camera.rotation.x = beta * (Math.PI / 180);
+                camera.rotation.y = gamma * (Math.PI / 180);
+                camera.rotation.z = alpha * (Math.PI / 180);
+            } else controls.update();
         }
         renderer.setAnimationLoop( animate );
     </script>

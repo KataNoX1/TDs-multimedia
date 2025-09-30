@@ -124,31 +124,30 @@
         const zAxis = new THREE.Vector3(0, 0, 1);
 
         function handleOrientation(event) {
-            if (event.alpha == null) return;
+            if (!event || event.alpha == null) return;
             absolute = !!event.absolute;
             alpha = event.alpha || 0;
             beta  = event.beta  || 0;
             gamma = event.gamma || 0;
-
-            tmpEuler.set(
-            THREE.MathUtils.degToRad(beta),   // pitch -> X
-            THREE.MathUtils.degToRad(alpha),  // yaw   -> Y
-            THREE.MathUtils.degToRad(-gamma), // roll  -> Z (sign flip)
-            "YXZ"
-            );
-            tmpQuat.setFromEuler(tmpEuler);
-            if (target && target.quaternion) {
-                target.quaternion.slerp(tmpQuat, 0.25); // 0..1 smoothing
-            }
         }
         window.addEventListener("deviceorientation", handleOrientation, true);
+
+        function applyLatestOrientation() {
+            const a = THREE.MathUtils.degToRad(alpha);
+            const b = THREE.MathUtils.degToRad(beta);
+            const g = THREE.MathUtils.degToRad(-gamma); // sign flip Z
+            tmpEuler.set(b, a, g, "YXZ");
+            tmpQuat.setFromEuler(tmpEuler);
+        }
+
+        if (isMobile() && typeof controls !== "undefined" && controls) controls.enabled = false;
+
 
         //Fonction d'animation
         function animate() {
             renderer.render( scene, camera );
-            if (isMobile()) handleOrientation();
+            if (isMobile()) applyLatestOrientation();
             else controls.update();
-
         }
         renderer.setAnimationLoop( animate );
     </script>

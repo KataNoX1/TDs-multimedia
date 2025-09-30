@@ -49,6 +49,7 @@
             //Physique
             await Ammo();
             await scene.enablePhysics(new BABYLON.Vector3(0, -9.81, 0), new BABYLON.AmmoJSPlugin(true));
+            scene.getPhysicsEngine().setTimeStep(1/120);
 
 
             //Cube
@@ -61,19 +62,38 @@
             cubeMaterial.diffuseTexture = new BABYLON.Texture("default.png", scene);
             cube.material = cubeMaterial;
 
+            cube.physicsImpostor = new BABYLON.PhysicsImpostor(
+                cube, BABYLON.PhysicsImpostor.BoxImpostor,
+                { mass: 0, friction: 0.6, restitution: 0.1 }, scene
+            );
+
 
             //Phoque
             BABYLON.SceneLoader.ImportMeshAsync("", "./", "bagel_seal.glb", scene).then((res) => {
-                const seal = res.meshes.find(m => m.name.includes("seal") && m instanceof BABYLON.Mesh) || res.meshes[0];
-                seal.position = new BABYLON.Vector3(0, 1.23, 0);
-                seal.rotation = BABYLON.Vector3.Zero();
-                shadowGenerator.addShadowCaster(seal, true);
-            });
+                const root = meshes[0];
+                root.position = BABYLON.Vector3(0, 2, 0);
 
+                const sealCol = BABYLON.MeshBuilder.CreateSphere("sealCol", { diameter: 1.4 }, scene);
+                sealCol.isVisible = true;
+                sealCol.position = new BABYLON.Vector3(0, 2, 0);
+                sealCol.physicsImpostor = new BABYLON.PhysicsImpostor(
+                    sealCol, BABYLON.PhysicsImpostor.SphereImpostor,
+                    { mass: 2, friction: 0.6, restitution: 0.1 }, scene
+                );
+
+                root.setParent(sealCol);
+
+                root.getChildMeshes().forEach(m => shadowGenerator.addShadowCaster(m, true));
+            });
 
 
             //Sol
             const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 10, height: 10 }, scene);
+            ground.physicsImpostor = new BABYLON.PhysicsImpostor(
+                ground, BABYLON.PhysicsImpostor.BoxImpostor,
+                { mass: 0, restitution: 0.0, friction: 0.8 }, scene
+            );
+
             ground.receiveShadows = true;
 
             return scene;
@@ -83,9 +103,9 @@
             engine.runRenderLoop(() => {
                 scene.render();
             });
-      });
+        });
 
-      window.addEventListener("resize", () => engine.resize());
+        window.addEventListener("resize", () => engine.resize());
     </script>
   </body>
 </html>

@@ -11,7 +11,7 @@
         position:fixed; inset:0;
         background:rgba(0,0,0,0.5);
         display:flex; align-items:center; justify-content:center;
-        z-index:1000; cursor:pointer; user-select:none;
+        z-index:2000; cursor:pointer; user-select:none;
         }
         .hidden{ display:none; }
         #geoOverlay .msg{
@@ -20,19 +20,43 @@
         font-size:18px;
         }
         .hidden{ display:none; }
+
+        #map2d {
+        position: absolute;
+        right: 16px;
+        bottom: 16px;
+        width: 30vw;
+        height: 30vh;
+        max-width: 860px;
+        max-height: 600px;
+        border-radius: 12px;
+        overflow: hidden;
+        z-index: 1000;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        #hud {
+        position: absolute; left: 16px; top: 16px; z-index: 1500;
+        color: #fff; font: 14px/1.4 system-ui, Segoe UI, Arial, sans-serif;
+        background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 10px;
+        }
     </style>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
     <div id="geoOverlay"><div class="msg">Cliquer pour lancer la geoloc</div></div>
+    <div id="map2d"></div>
     <canvas id="renderCanvas"></canvas>
     <script>
         function toRad(deg) { return deg * Math.PI / 180; }
         function toDeg(rad) { return rad * 180 / Math.PI; }
 
         function latLongToXYZ(latDeg, lonDeg, radius) {
-            // normalisation optionnelle
             let lat = ((latDeg + 90) % 180) - 90;
             let lon = ((lonDeg + 180) % 360) - 180;
 
@@ -67,7 +91,7 @@
             //Camera
             camera = new BABYLON.ArcRotateCamera("camera", 0, 0, 6, new BABYLON.Vector3(0, 0, 0), scene);
 
-            camera.lowerRadiusLimit = 2.1;
+            camera.lowerRadiusLimit = 2.01;
             camera.upperRadiusLimit = 10;
             camera.wheelDeltaPercentage = 0.01;
 
@@ -75,7 +99,7 @@
 
             //Lumière
             const ambientLight = new BABYLON.HemisphericLight("ambientLight", new BABYLON.Vector3(0, 0, 0), scene);
-            ambientLight.intensity = 0.8;
+            ambientLight.intensity = 0.7;
 
             const light = new BABYLON.DirectionalLight("light", new BABYLON.Vector3(-1, -1.5, -1), scene);
             light.position = new BABYLON.Vector3(5, 7.5, 5);
@@ -95,7 +119,23 @@
 
             //Markers
             myMarker = BABYLON.MeshBuilder.CreateSphere("myMarker", { diameter: 0.01, segments: 16 }, scene);
+            const myMarkerMat = new BABYLON.StandardMaterial("myMarkerMat", scene);
+            myMarkerMat.emissiveColor = new BABYLON.Color3(0, 1, 1);
+            myMarker.material = myMarkerMat;
+
+            addCountryMarkers(scene, 1);
             
+            //Interaction Leaflet
+            scene.onPointerObservable.add((pointerInfo) => {
+                const pick = pointerInfo.pickInfo;
+                if (pick && pick.hit && pick.pickedMesh === earth) {
+                const p = pick.pickedPoint.normalize();
+                const ll = xyzToLatLong(p);
+
+                map.setView([ll.lat, -ll.lon], Math.max(3, map.getZoom()));
+            }
+            }, BABYLON.PointerEventTypes.POINTERPICK);
+
             return scene;
         }
         const scene = createScene();
@@ -116,10 +156,67 @@
                 function(pos){
                     const lat = pos.coords.latitude;
                     const lon = pos.coords.longitude;
-                    const v = latLongToXYZ(lat, lon, 1);
+                    const v = latLongToXYZ(lat, lon, 1.01);
                     myMarker.position = v;
                     camera.position = latLongToXYZ(lat, lon, 3);
             });}, { once: true });
+        
+        async function addCountryMarkers(scene, radius){
+            const res = await fetch("https://restcountries.com/v3.1/all?fields=name,latlng,flags,cca3");
+            const data = await res.json();
+
+            for(let i=0; i<data.length; i++){
+                const c = data[i];
+                if(!c.latlng || c.latlng.length < 2 || !c.flags || !c.flags.png) continue;
+
+                const lat = c.latlng[0];
+                const lon = c.latlng[1];
+                const name = (c.name?.common || c.cca3 || "country").replace(/[^a-z0-9_\-]/gi,"_");
+                const flagUrl = c.flags.png;
+
+                createFlagMarker(scene, lat, lon, flagUrl, name, radius);
+
+            }
+            console.log("Country markers added:", data.length);
+        }
+
+        function createFlagMarker(scene, lat, lon, flagUrl, name, radius){
+            const r = radius * 1.01;
+            const pos = latLongToXYZ(lat, lon, r);
+
+            const plane = BABYLON.MeshBuilder.CreatePlane("flag_"+name, {width: 0.03, height: 0.02, scene});
+            plane.position = pos;
+            plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+
+            const mat = new BABYLON.StandardMaterial("mat_"+name, scene);
+            mat.disableLighting = true;
+            mat.emissiveColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+            mat.diffuseTexture = new BABYLON.Texture(flagUrl, scene);
+            plane.material = mat;
+
+
+
+            return plane;
+        }
+
+        ///////LEAFLET////////
+        const map = L.map("map2d").setView([0, 0], 2);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 19, crossOrigin: true}).addTo(map);
+
+        document.getElementById("map2d").addEventListener("mouseover", function(){
+            this.style.width = "50vw";
+            this.style.height = "50vh";
+        });
+        document.getElementById("map2d").addEventListener("mouseout", function(){
+            this.style.width = "30vw";
+            this.style.height = "30vh";
+        });
+        map.on("click", (e) => {
+            const lat = e.latlng.lat;
+            const lon = e.latlng.lng;
+            camera.position = latLongToXYZ(lat, lon, 3);
+        });
+
     </script>
 </body>
 </html>

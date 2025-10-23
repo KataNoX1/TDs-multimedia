@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>My first three.js app</title>
+    <style>
+      html, body { margin: 0; padding: 0; overflow: hidden; }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three/examples/jsm/"
+            }
+        }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        const scene = new THREE.Scene();
+
+        //Loaders
+        const TextureLoader = new THREE.TextureLoader();
+        const ObjectLoader = new GLTFLoader();
+
+        //Caméra
+        const camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.25, 160);
+        camera.position.set( 4, 5, 5 );
+        camera.lookAt( 0, 0, 0 );
+        scene.add( camera );
+
+
+        //Lumière
+        const light = new THREE.DirectionalLight( 0xffffff );
+        light.position.set( 20, 20, 10 );
+        light.castShadow = true;
+        scene.add( light );
+
+        const ambient = new THREE.AmbientLight( 0x404040, 3 ); // soft white light
+        scene.add( ambient );
+
+
+        //Fog
+        const color = 0xFFFFFF;
+        const density = 0.1;
+        scene.fog = new THREE.FogExp2(color, density);
+
+
+        //Sol
+        const ground = new THREE.Mesh(
+					new THREE.PlaneGeometry( 9, 9, 1, 1 ),
+					new THREE.MeshPhongMaterial( { color: 0xa0adaf, shininess: 150 } )
+				);
+        ground.rotation.x = -Math.PI / 2
+		ground.receiveShadow = true;
+		scene.add( ground );
+
+
+        //Cube
+        const BoxGeometry = new THREE.BoxGeometry(1, 1, 1);
+        const BoxTexture = TextureLoader.load( './default.png' );
+        BoxTexture.colorSpace = THREE.SRGBColorSpace;
+        const BoxMaterial = new THREE.MeshBasicMaterial({ map: BoxTexture, });
+        
+        const cube = new THREE.Mesh(BoxGeometry, BoxMaterial);
+        cube.castShadow = true;
+        scene.add(cube);
+        cube.position.y = 0.5;
+
+
+        //Phoque
+        ObjectLoader.load('./bagel_seal.glb', function ( gltf ) {
+            const model = gltf.scene;
+            model.position.y = 1.23;
+            model.rotation.y = 11*Math.PI/6;
+            model.traverse( function ( object ) {
+                if ( object.isMesh ) object.castShadow = true;
+            } );
+            scene.add( model );
+        });
+
+        //Renderer
+        let renderer = new THREE.WebGLRenderer( { antialias: true } );
+		renderer.setPixelRatio( window.devicePixelRatio );
+		renderer.setSize( window.innerWidth, window.innerHeight );
+		renderer.setAnimationLoop( animate );
+		renderer.shadowMap.enabled = true;
+		document.body.appendChild( renderer.domElement );
+
+
+        //Controls Caméra
+        const controls = new OrbitControls( camera, renderer.domElement );
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+		controls.target.set( 0, 1, 0 );
+
+        controls.maxPolarAngle = Math.PI * 0.5;
+
+        controls.rotateSpeed = 0.5;
+        controls.panSpeed = 0.5; 
+        
+        controls.minDistance = 2;
+        controls.maxDistance = 10;
+
+
+        //DeviceEvent
+        function isPhone() {
+            return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
+        let gyroRotation = { x: 0, y: 0, z: 0 };
+
+        function handleOrientation(event) {
+            const { alpha, beta, gamma } = event;
+            if (alpha !== null && beta !== null && gamma !== null) {
+                gyroRotation.x = THREE.MathUtils.degToRad(beta - 90);
+                gyroRotation.y = THREE.MathUtils.degToRad(alpha);
+                gyroRotation.z = 0;
+            }
+        }
+
+        window.addEventListener('deviceorientation', handleOrientation);
+
+
+        //Fonction d'animation
+        function animate() {
+            renderer.render( scene, camera );
+            if (!isPhone()) {
+                controls.update();
+            } else {
+                camera.rotation.x = gyroRotation.x;
+                camera.rotation.y = gyroRotation.y;
+                camera.rotation.z = gyroRotation.z;
+            }
+        }
+        renderer.setAnimationLoop( animate );
+
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+    </script>
+  </body>
+</html>

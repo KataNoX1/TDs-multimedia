@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Carte à la voix — Avance, Recule & Pays</title>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    :root{--bg:#0b1020;--fg:#e6edf3;--muted:#9fb0c3;--accent:#7cc7ff;--danger:#ff6b6b;--info:#2bd576}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
+    #app{display:grid;grid-template-rows:auto 1fr; height:100%}
+    header{display:flex;gap:.75rem;align-items:center;padding:.75rem 1rem;border-bottom:1px solid #1e263b;background:#0e1428;position:relative}
+    header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.2px}
+    .pill{padding:.25rem .5rem;border:1px solid #1f2a44;border-radius:999px;color:var(--muted)}
+    .spacer{flex:1}
+    #status{font-variant-numeric:tabular-nums;color:var(--muted);transition:color .3s ease}
+    #status.ready{color:var(--info)}
+    #status.busy{color:#ffd479}
+    #status.error{color:var(--danger)}
+    #map{position:relative;height:100%;width:100%}
+    .hud{position:absolute;left:12px;bottom:12px;display:flex;flex-direction:column;gap:8px;z-index:5}
+    .card{background:#0e1428cc;border:1px solid #1f2a44;border-radius:14px;padding:10px 12px;backdrop-filter: blur(6px);}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .btn, select{appearance:none;border:1px solid #1f2a44;background:#111935;color:var(--fg);padding:8px 10px;border-radius:10px;cursor:pointer}
+    .btn:hover, select:hover{border-color:#314473}
+    .btn.rec{border-color:#314473;}
+    .dot{width:10px;height:10px;border-radius:999px;background:var(--muted)}
+    .dot.on{background:#2bd576;box-shadow:0 0 0 6px #2bd57622}
+    .dot.err{background:var(--danger);box-shadow:0 0 0 6px #ff6b6b22}
+    .help{color:var(--muted);font-size:12px}
+    .cmds{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:6px;margin-top:6px}
+    .cmd{border:1px dashed #223159;border-radius:10px;padding:6px 8px;color:var(--muted)}
+  </style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🗺️ Carte contrôlée à la voix</h1>
+    <span class="pill">MapLibre GL</span>
+    <span class="pill">Web Speech API</span>
+    <div class="spacer"></div>
+    <div id="status" class="ready">Disponible</div>
+  </header>
+  <div id="map"></div>
+</div>
+
+<div class="hud">
+  <div class="card">
+    <div class="row">
+      <button id="micBtn" class="btn">🎙️ Activer micro</button>
+      <label class="help" for="styleSel">Style&nbsp;:</label>
+      <select id="styleSel" title="Changer de style de carte">
+        <option value="streets" selected>Classique</option>
+        <option value="osm">OSM</option>
+        <option value="topo">Topo</option>
+      </select>
+      <div id="micDot" class="dot"></div>
+    </div>
+    <div id="last" class="help">Dernière commande&nbsp;: —</div>
+  </div>
+  <div class="card help">
+    <div><strong>Commandes</strong> :</div>
+    <div class="cmds">
+      <div class="cmd">"Avance" / "Recule"</div>
+      <div class="cmd">"À gauche / droite / haut / bas"</div>
+      <div class="cmd">"Va à la France"</div>
+      <div class="cmd">"Centre sur moi"</div>
+      <div class="cmd">"Mode classique / topo / osm"</div>
+      <div class="cmd">"Distance entre France et Canada"</div>
+      <div class="cmd">"Encore" (répète la dernière)</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+<script>
+(async function(){
+  // --- tiny utils ---
+  const $ = (s)=>document.querySelector(s);
+  const status=$('#status'), micBtn=$('#micBtn'), micDot=$('#micDot'), styleSel=$('#styleSel'), last=$('#last');
+  let lastCommand=null;
+  function setState(cl,text){ status.className=''; if(cl) status.classList.add(cl); status.textContent=text; }
+  const busy =(t='Traitement…')=>setState('busy',t);
+  const ready=(t='Disponible')=>setState('ready',t);
+  const fail =(t='Erreur')=>setState('error',t);
+  const norm = (s)=> s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu,'').trim();
+
+  // --- styles: vector + raster
+  const rasterStyle = (tiles, attribution)=>({
+    version: 8,
+    sources: { raster: { type:'raster', tiles, tileSize:256, attribution } },
+    layers: [{ id:'basemap', type:'raster', source:'raster' }],
+    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf'
+  });
+  const STYLES = {
+    streets: 'https://demotiles.maplibre.org/style.json',
+    osm: rasterStyle(['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],'© OpenStreetMap'),
+    topo: rasterStyle([
+      'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
+      'https://b.tile.opentopomap.org/{z}/{x}/{y}.png',
+      'https://c.tile.opentopomap.org/{z}/{x}/{y}.png'
+    ], '© OpenTopoMap (CC-BY-SA)')
+  };
+
+  // --- map ---
+  const map = new maplibregl.Map({container:'map', style:STYLES.streets, center:[2.33,48.86], zoom:4});
+  map.addControl(new maplibregl.NavigationControl(),'top-right');
+
+  // distance overlay state
+  let currentDistanceOverlay=null; // {a,b,text}
+  function drawDistanceOverlay(a,b,text){
+    currentDistanceOverlay = {a,b,text};
+    const lineId='distance-line', labelId='distance-label';
+    const lineGeo={ type:'FeatureCollection', features:[{type:'Feature', geometry:{type:'LineString', coordinates:[[a.lon,a.lat],[b.lon,b.lat]]}}] };
+    const mid={ lon:(a.lon+b.lon)/2, lat:(a.lat+b.lat)/2 };
+    const labelGeo={ type:'FeatureCollection', features:[{type:'Feature', properties:{label:text}, geometry:{type:'Point', coordinates:[mid.lon, mid.lat]}}] };
+    if(map.getSource(lineId)) map.getSource(lineId).setData(lineGeo); else { map.addSource(lineId,{type:'geojson', data:lineGeo}); map.addLayer({id:lineId, type:'line', source:lineId, paint:{'line-width':3,'line-color':'#7cc7ff'}}); }
+    if(map.getSource(labelId)) map.getSource(labelId).setData(labelGeo); else { map.addSource(labelId,{type:'geojson', data:labelGeo}); map.addLayer({id:labelId, type:'symbol', source:labelId, layout:{'text-field':['get','label'],'text-size':14,'text-offset':[0,-1]}, paint:{'text-halo-color':'#0e1428','text-halo-width':1.2}}); }
+  }
+  function applyStyle(key){
+    const style = STYLES[key] || STYLES.streets;
+    map.setStyle(style);
+    map.once('styledata', ()=>{ if(currentDistanceOverlay){ const {a,b,text}=currentDistanceOverlay; drawDistanceOverlay(a,b,text); } });
+  }
+  styleSel.addEventListener('change', (e)=> applyStyle(e.target.value));
+
+  // --- geocoding helpers ---
+  async function geocodeRestCountries(q){
+    try{
+      const url = new URL('https://restcountries.com/v3.1/name/'+encodeURIComponent(q));
+      url.searchParams.set('fullText','false');
+      url.searchParams.set('fields','name,latlng,translations');
+      const r = await fetch(url);
+      if(!r.ok) return null; const arr = await r.json();
+      if(!Array.isArray(arr)||!arr.length) return null;
+      const c=arr[0]; if(c?.latlng?.length===2){ const [lat,lon]=c.latlng; return {lon,lat,label:c.name?.common||q}; }
+    }catch{}
+    return null;
+  }
+  async function geocodeNominatim(q){
+    try{
+      const url = new URL('https://nominatim.openstreetmap.org/search');
+      url.searchParams.set('q', q); url.searchParams.set('format','json'); url.searchParams.set('limit','1'); url.searchParams.set('addressdetails','0'); url.searchParams.set('accept-language','fr');
+      const r = await fetch(url); if(!r.ok) return null; const d=await r.json(); if(d[0]) return {lon:parseFloat(d[0].lon), lat:parseFloat(d[0].lat), label:q};
+    }catch{}
+    return null;
+  }
+  const geocodePlace = async(q)=> await geocodeRestCountries(q) || await geocodeNominatim(q);
+  const haversine=(a,b)=>{ const R=6371, toRad=x=>x*Math.PI/180; const dLat=toRad(b.lat-a.lat), dLon=toRad(b.lon-a.lon); const s1=Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(s1)); };
+
+  async function goToPlace(q){
+    busy('Recherche: '+q+'…');
+    const p = await geocodePlace(q);
+    if(p){ map.flyTo({center:[p.lon,p.lat], zoom:5, duration:800}); ready('Aller vers: '+q); micDot.className='dot on'; setTimeout(()=>micDot.className='dot',900); }
+    else { fail('Introuvable: '+q); micDot.className='dot err'; setTimeout(()=>micDot.className='dot',900); }
+  }
+  async function distanceBetween(aLabel,bLabel){
+    busy('Calcul de distance…');
+    const [a,b] = await Promise.all([geocodePlace(aLabel), geocodePlace(bLabel)]);
+    if(!a || !b){ fail('Introuvable: '+(!a?aLabel:bLabel)); return; }
+    const dKm = haversine(a,b); const text = `${dKm.toFixed(0)} km`;
+    drawDistanceOverlay(a,b,text);
+    const bounds=[[a.lon,a.lat],[b.lon,b.lat]]; map.fitBounds(bounds,{padding:100,duration:700});
+    ready(`Distance ${aLabel} ↔ ${bLabel} : ${text}`);
+  }
+  function centerOnMe(){ busy('Centrage sur vous…'); if(!('geolocation' in navigator)){ fail('Géolocalisation indisponible'); return; } navigator.geolocation.getCurrentPosition(p=>{ map.flyTo({center:[p.coords.longitude,p.coords.latitude], zoom:12, duration:700}); ready('Centré sur vous'); }, ()=> fail('Position refusée')); }
+
+  // --- commands ---
+  function handleCommand(raw){
+    const t = norm(raw);
+    if(t==='encore' && lastCommand){ handleCommand(lastCommand); return; }
+    lastCommand = raw; last.textContent = 'Dernière commande : '+raw;
+
+    // zoom
+    if(/\b(avance|approche|proche)\b/.test(t)) { busy('Avance…'); map.zoomIn({duration:300}); ready('OK: avance'); return; }
+    if(/\b(recule|eloigne|loin)\b/.test(t)) { busy('Recule…'); map.zoomOut({duration:300}); ready('OK: recule'); return; }
+    // pan
+    if(/\b(haut|monte)\b/.test(t)) { busy('Haut…'); map.panBy([0,-200]); ready('OK: haut'); return; }
+    if(/\b(bas|descend)\b/.test(t)) { busy('Bas…'); map.panBy([0,200]); ready('OK: bas'); return; }
+    if(/\b(gauche)\b/.test(t)) { busy('Gauche…'); map.panBy([-200,0]); ready('OK: gauche'); return; }
+    if(/\b(droite)\b/.test(t)) { busy('Droite…'); map.panBy([200,0]); ready('OK: droite'); return; }
+    // me
+    if(/centre(r)? sur moi|localise moi|ma position/.test(t)) { centerOnMe(); return; }
+    // mode
+    if(/mode (classique|vector)/.test(t)) { styleSel.value='streets'; applyStyle('streets'); ready('Mode classique'); return; }
+    if(/mode (topo|topographique)/.test(t)) { styleSel.value='topo'; applyStyle('topo'); ready('Mode topo'); return; }
+    if(/mode (raster|osm|simple)/.test(t)) { styleSel.value='osm'; applyStyle('osm'); ready('Mode OSM'); return; }
+    // distance
+    const dist = t.match(/distance (?:entre|de) (.+) (?:et|a|à) (.+)$/);
+    if(dist) { distanceBetween(dist[1], dist[2]); return; }
+    // goto
+    const va = t.match(/\b(va a|aller a|centre|centrer sur|montre|affiche)\b\s+(.*)$/);
+    if(va && va[2]) { goToPlace(va[2]); return; }
+    if(t.split(' ').length <= 4) { goToPlace(t); return; }
+
+    fail('Commande non reconnue');
+  }
+
+  // --- speech ---
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(SR){ const rec = new SR(); rec.lang='fr-FR'; rec.continuous=true; rec.interimResults=true; rec.onresult=(e)=>{ for(let i=e.resultIndex;i<e.results.length;i++){ const r=e.results[i]; const s=r[0].transcript.trim(); if(r.isFinal) handleCommand(s); } }; rec.onstart=()=>ready('Écoute active…'); rec.onerror=()=>fail('Erreur micro'); micBtn.onclick=()=>{ if(micBtn.classList.toggle('rec')){ rec.start(); ready('Écoute active…'); } else { rec.stop(); ready('Pause'); } }; } else { fail('Micro non supporté'); }
+})();
+</script>
+</body>
+</html>

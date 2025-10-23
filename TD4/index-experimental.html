@@ -80,6 +80,8 @@
   const $ = (s)=>document.querySelector(s);
   const status=$('#status'), micBtn=$('#micBtn'), micDot=$('#micDot'), styleSel=$('#styleSel'), last=$('#last');
   let lastCommand=null;
+  let lastExec=null; // FIX: dernière commande exécutée (hors "encore")
+
   const setState=(cl,text)=>{ status.className=''; if(cl) status.classList.add(cl); status.textContent=text; };
   const busy =(t='Traitement…')=>setState('busy',t);
   const ready=(t='Disponible')=>setState('ready',t);
@@ -187,35 +189,38 @@
     last.textContent = `Dernière commande : ${raw}`;
     const t = norm(raw);
 
-    // déplacements
-    // déplacements (zoom)
-    if (t === '+' || /\b(avance|zoome? in)\b/.test(t)) { map.zoomIn(); return ready('Zoom +'); }
-    if (t === '-' || /\b(recule|zoome? out|moins)\b/.test(t)) { map.zoomOut(); return ready('Zoom -'); }
-    if(/\bgauche\b/.test(t)){ const c=map.getCenter(); map.easeTo({center:[c.lng-1,c.lat]}); return ready('Gauche'); }
-    if(/\bdroite\b/.test(t)){ const c=map.getCenter(); map.easeTo({center:[c.lng+1,c.lat]}); return ready('Droite'); }
-    if(/\b(haut|nord)\b/.test(t)){ const c=map.getCenter(); map.easeTo({center:[c.lng,c.lat+1]}); return ready('Haut'); }
-    if(/\b(bas|sud)\b/.test(t)){ const c=map.getCenter(); map.easeTo({center:[c.lng,c.lat-1]}); return ready('Bas'); }
+    // --- ENCORE (prioritaire, n'écrase pas lastExec) ---
+    if(t==='encore' && lastExec){ handleCommand(lastExec); return; }
 
-    // encore
-    if(t==='encore' && lastCommand){ handleCommand(lastCommand); return; }
+    // --- Déplacements (plus robustes) ---
+    if(/\b(avance|zoome?\s*in|\+)\b/.test(t)){ lastExec=raw; map.zoomIn(); return ready('Zoom +'); }
+    if(/\b(recul(?:e|er|ez)?|zoome?\s*out|dezoome?|moins|-)\b/.test(t)){ // FIX: accepte "recul"
+      lastExec=raw; map.zoomOut(); return ready('Zoom -');
+    }
+    if(/\bgauche\b/.test(t)){ const c=map.getCenter(); lastExec=raw; map.easeTo({center:[c.lng-1,c.lat]}); return ready('Gauche'); }
+    if(/\bdroite\b/.test(t)){ const c=map.getCenter(); lastExec=raw; map.easeTo({center:[c.lng+1,c.lat]}); return ready('Droite'); }
+    if(/\b(haut|nord)\b/.test(t)){ const c=map.getCenter(); lastExec=raw; map.easeTo({center:[c.lng,c.lat+1]}); return ready('Haut'); }
+    if(/\b(bas|sud)\b/.test(t)){ const c=map.getCenter(); lastExec=raw; map.easeTo({center:[c.lng,c.lat-1]}); return ready('Bas'); }
 
-    // style
-    const mode = t.match(/\b(mode|style)\s+(classique|topo|osm)\b/);
-    if(mode){ styleSel.value = (mode[2]==='classique'?'streets':mode[2]); styleSel.dispatchEvent(new Event('change')); return ready('Style changé'); }
+    // --- Style ---
+    const mode = t.match(/\b(?:mode|style)\s+(classique|topo|osm)\b/);
+    if(mode){ lastExec=raw; styleSel.value = (mode[1]==='classique'?'streets':mode[1]); styleSel.dispatchEvent(new Event('change')); return ready('Style changé'); }
 
-    // distance
+    // --- Distances ---
     const dist = t.match(/distance (?:entre|de) (.+) (?:et|a|à) (.+)$/);
-    if(dist) { distanceBetween(dist[1], dist[2]); return; }
-    const dash = raw.match(/^\s*(.+?)\s*[-–—]\s*(.+?)\s*$/);
-    if(dash) { distanceBetween(dash[1], dash[2]); return; }
+    if(dist) { lastExec=raw; distanceBetween(dist[1], dist[2]); return; }
+    // FIX: exiger des espaces autour du tiret (évite "états-unis")
+    const dash = raw.match(/^\s*(.+?)\s+[-–—]\s+(.+?)\s*$/);
+    if(dash) { lastExec=raw; distanceBetween(dash[1], dash[2]); return; }
 
-    // aller à (prioritaire après autres commandes)
+    // --- Aller à (sur commande explicite) ---
     const va = t.match(/\b(va a|aller a|centre|centrer sur|montre|affiche)\b\s+(.*)$/);
-    if(va && va[2]) { goToPlace(va[2]); return; }
+    if(va && va[2]) { lastExec=raw; goToPlace(va[2]); return; }
 
-    // si la commande semble un nom de lieu court, on tente seulement si aucun mot-clé précédent
-    if(!/(avance|recule|haut|bas|gauche|droite|mode|style|distance|encore)/.test(t) && t.split(' ').length <= 4){
-      goToPlace(t); return;
+    // --- Heuristique "nom de lieu court" (seulement si aucun mot-clé détecté) ---
+    // FIX: inclure 'recul' dans la liste d'exclusion pour ne pas géocoder "recul"
+    if(!/(avance|recul(?:e|er|ez)?|haut|bas|gauche|droite|mode|style|distance|encore)/.test(t) && t.split(' ').length <= 4){
+      lastExec=raw; goToPlace(t); return;
     }
 
     fail('Commande non reconnue');
@@ -224,7 +229,18 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if(SR){
     const rec = new SR(); rec.lang='fr-FR'; rec.continuous=true; rec.interimResults=true;
-    rec.onresult = (e)=>{ for(let i=e.resultIndex;i<e.results.length;i++){ const r=e.results[i]; const s=r[0].transcript.trim(); if(r.isFinal){ lastCommand=s; handleCommand(s); } } };
+    rec.onresult = (e)=>{
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const r=e.results[i];
+        const s=r[0].transcript.trim();
+        const sn=norm(s);
+        if(r.isFinal){
+          // FIX: ne pas écraser la dernière commande exécutable avec "encore"
+          if(sn==='encore'){ handleCommand('encore'); }
+          else { lastCommand=s; handleCommand(s); }
+        }
+      }
+    };
     rec.onstart = ()=>{ ready('Écoute active…'); micDot.classList.add('on'); micBtn.textContent='⏸️ Pause micro'; micBtn.setAttribute('aria-pressed','true'); };
     rec.onend = ()=>{ ready('Pause'); micDot.classList.remove('on'); micBtn.classList.remove('rec'); micBtn.textContent='🎙️ Activer micro'; micBtn.setAttribute('aria-pressed','false'); };
     rec.onerror = ()=>{ fail('Erreur micro'); micDot.classList.add('err'); setTimeout(()=>micDot.classList.remove('err'),800); };

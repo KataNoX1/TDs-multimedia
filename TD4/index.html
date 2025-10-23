@@ -14,7 +14,7 @@
     header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.2px}
     .pill{padding:.25rem .5rem;border:1px solid #1f2a44;border-radius:999px;color:var(--muted)}
     .spacer{flex:1}
-    #status{font-variant-numeric:tabular-nums;color:var(--muted);transition:color .3s ease}
+    #status{font-variant-numeric:tabular-nums;color:var(--muted);transition:color .25s ease}
     #status.ready{color:var(--info)}
     #status.busy{color:#ffd479}
     #status.error{color:var(--danger)}
@@ -68,6 +68,7 @@
       <div class="cmd">"Centre sur moi"</div>
       <div class="cmd">"Mode classique / topo / osm"</div>
       <div class="cmd">"Distance entre France et Canada"</div>
+      <div class="cmd">"France - Canada" (distance rapide)</div>
       <div class="cmd">"Encore" (répète la dernière)</div>
     </div>
   </div>
@@ -76,17 +77,17 @@
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 <script>
 (async function(){
-  // --- tiny utils ---
   const $ = (s)=>document.querySelector(s);
   const status=$('#status'), micBtn=$('#micBtn'), micDot=$('#micDot'), styleSel=$('#styleSel'), last=$('#last');
   let lastCommand=null;
-  function setState(cl,text){ status.className=''; if(cl) status.classList.add(cl); status.textContent=text; }
+  let lastExec=null; // FIX: dernière commande exécutée (hors "encore")
+
+  const setState=(cl,text)=>{ status.className=''; if(cl) status.classList.add(cl); status.textContent=text; };
   const busy =(t='Traitement…')=>setState('busy',t);
   const ready=(t='Disponible')=>setState('ready',t);
   const fail =(t='Erreur')=>setState('error',t);
   const norm = (s)=> s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu,'').trim();
 
-  // --- styles: vector + raster
   const rasterStyle = (tiles, attribution)=>({
     version: 8,
     sources: { raster: { type:'raster', tiles, tileSize:256, attribution } },
@@ -103,103 +104,148 @@
     ], '© OpenTopoMap (CC-BY-SA)')
   };
 
-  // --- map ---
   const map = new maplibregl.Map({container:'map', style:STYLES.streets, center:[2.33,48.86], zoom:4});
   map.addControl(new maplibregl.NavigationControl(),'top-right');
 
-  // distance overlay state
-  let currentDistanceOverlay=null; // {a,b,text}
+  let currentDistanceOverlay = null;
   function drawDistanceOverlay(a,b,text){
     currentDistanceOverlay = {a,b,text};
     const lineId='distance-line', labelId='distance-label';
-    const lineGeo={ type:'FeatureCollection', features:[{type:'Feature', geometry:{type:'LineString', coordinates:[[a.lon,a.lat],[b.lon,b.lat]]}}] };
-    const mid={ lon:(a.lon+b.lon)/2, lat:(a.lat+b.lat)/2 };
-    const labelGeo={ type:'FeatureCollection', features:[{type:'Feature', properties:{label:text}, geometry:{type:'Point', coordinates:[mid.lon, mid.lat]}}] };
-    if(map.getSource(lineId)) map.getSource(lineId).setData(lineGeo); else { map.addSource(lineId,{type:'geojson', data:lineGeo}); map.addLayer({id:lineId, type:'line', source:lineId, paint:{'line-width':3,'line-color':'#7cc7ff'}}); }
-    if(map.getSource(labelId)) map.getSource(labelId).setData(labelGeo); else { map.addSource(labelId,{type:'geojson', data:labelGeo}); map.addLayer({id:labelId, type:'symbol', source:labelId, layout:{'text-field':['get','label'],'text-size':14,'text-offset':[0,-1]}, paint:{'text-halo-color':'#0e1428','text-halo-width':1.2}}); }
+    const lineGeo={ type:'FeatureCollection', features:[{type:'Feature', geometry:{type:'LineString', coordinates:[a,b]}}] };
+    const mid=[ (a[0]+b[0])/2, (a[1]+b[1])/2 ];
+    const labelGeo={ type:'FeatureCollection', features:[{type:'Feature', properties:{label:text}, geometry:{type:'Point', coordinates:mid}}] };
+
+    if(map.getSource(lineId)) map.getSource(lineId).setData(lineGeo); else {
+      map.addSource(lineId,{type:'geojson', data:lineGeo});
+      map.addLayer({id:lineId, type:'line', source:lineId, paint:{'line-width':3, 'line-color':'#7cc7ff'}});
+    }
+    if(map.getSource(labelId)) map.getSource(labelId).setData(labelGeo); else {
+      map.addSource(labelId,{type:'geojson', data:labelGeo});
+      map.addLayer({id:labelId, type:'symbol', source:labelId, layout:{'text-field':['get','label'],'text-size':14,'text-offset':[0,-1]}, paint:{'text-halo-color':'#0e1428','text-halo-width':1.2}});
+    }
   }
+
   function applyStyle(key){
-    const style = STYLES[key] || STYLES.streets;
-    map.setStyle(style);
+    const st = STYLES[key] || STYLES.streets;
+    map.setStyle(st);
     map.once('styledata', ()=>{ if(currentDistanceOverlay){ const {a,b,text}=currentDistanceOverlay; drawDistanceOverlay(a,b,text); } });
   }
-  styleSel.addEventListener('change', (e)=> applyStyle(e.target.value));
+  styleSel.addEventListener('change', ()=>{ applyStyle(styleSel.value); });
 
-  // --- geocoding helpers ---
-  async function geocodeRestCountries(q){
-    try{
-      const url = new URL('https://restcountries.com/v3.1/name/'+encodeURIComponent(q));
-      url.searchParams.set('fullText','false');
-      url.searchParams.set('fields','name,latlng,translations');
-      const r = await fetch(url);
-      if(!r.ok) return null; const arr = await r.json();
-      if(!Array.isArray(arr)||!arr.length) return null;
-      const c=arr[0]; if(c?.latlng?.length===2){ const [lat,lon]=c.latlng; return {lon,lat,label:c.name?.common||q}; }
-    }catch{}
-    return null;
+  async function geocode(place){
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(place)}`;
+    const res = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
+    const data = await res.json();
+    return data && data[0] ? data[0] : null;
   }
-  async function geocodeNominatim(q){
-    try{
-      const url = new URL('https://nominatim.openstreetmap.org/search');
-      url.searchParams.set('q', q); url.searchParams.set('format','json'); url.searchParams.set('limit','1'); url.searchParams.set('addressdetails','0'); url.searchParams.set('accept-language','fr');
-      const r = await fetch(url); if(!r.ok) return null; const d=await r.json(); if(d[0]) return {lon:parseFloat(d[0].lon), lat:parseFloat(d[0].lat), label:q};
-    }catch{}
-    return null;
+  function haversine([lng1,lat1],[lng2,lat2]){
+    const toRad = (d)=>d*Math.PI/180;
+    const φ1=toRad(lat1), φ2=toRad(lat2);
+    const Δφ=toRad(lat2-lat1), Δλ=toRad(lng2-lng1);
+    const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return 6371000 * c;
   }
-  const geocodePlace = async(q)=> await geocodeRestCountries(q) || await geocodeNominatim(q);
-  const haversine=(a,b)=>{ const R=6371, toRad=x=>x*Math.PI/180; const dLat=toRad(b.lat-a.lat), dLon=toRad(b.lon-a.lon); const s1=Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(s1)); };
 
   async function goToPlace(q){
-    busy('Recherche: '+q+'…');
-    const p = await geocodePlace(q);
-    if(p){ map.flyTo({center:[p.lon,p.lat], zoom:5, duration:800}); ready('Aller vers: '+q); micDot.className='dot on'; setTimeout(()=>micDot.className='dot',900); }
-    else { fail('Introuvable: '+q); micDot.className='dot err'; setTimeout(()=>micDot.className='dot',900); }
+    if(/\b(moi|ma position)\b/.test(q)){
+      if(navigator.geolocation){
+        busy('Localisation…');
+        navigator.geolocation.getCurrentPosition((pos)=>{
+          const { longitude:lng, latitude:lat } = pos.coords;
+          map.flyTo({ center:[lng,lat], zoom:12, duration:1200 });
+          ready('Centré sur vous');
+        }, ()=>fail('Géolocalisation refusée'));
+      } else { fail('Géolocalisation indisponible'); }
+      return;
+    }
+    busy('Recherche…');
+    const g = await geocode(q);
+    if(!g){ fail('Lieu introuvable'); return; }
+    const lng = parseFloat(g.lon), lat = parseFloat(g.lat);
+    const bbox = (g.boundingbox||[]).map(parseFloat);
+    if(bbox.length===4){ map.fitBounds([[bbox[2], bbox[0]], [bbox[3], bbox[1]]], { padding: 60, duration: 1200 }); }
+    else { map.flyTo({ center:[lng,lat], zoom:10, duration: 1200 }); }
+    ready(`Aller à ${g.display_name?.split(',')[0] || q}`);
   }
-  async function distanceBetween(aLabel,bLabel){
-    busy('Calcul de distance…');
-    const [a,b] = await Promise.all([geocodePlace(aLabel), geocodePlace(bLabel)]);
-    if(!a || !b){ fail('Introuvable: '+(!a?aLabel:bLabel)); return; }
-    const dKm = haversine(a,b); const text = `${dKm.toFixed(0)} km`;
-    drawDistanceOverlay(a,b,text);
-    const bounds=[[a.lon,a.lat],[b.lon,b.lat]]; map.fitBounds(bounds,{padding:100,duration:700});
-    ready(`Distance ${aLabel} ↔ ${bLabel} : ${text}`);
-  }
-  function centerOnMe(){ busy('Centrage sur vous…'); if(!('geolocation' in navigator)){ fail('Géolocalisation indisponible'); return; } navigator.geolocation.getCurrentPosition(p=>{ map.flyTo({center:[p.coords.longitude,p.coords.latitude], zoom:12, duration:700}); ready('Centré sur vous'); }, ()=> fail('Position refusée')); }
 
-  // --- commands ---
-  function handleCommand(raw){
+  async function distanceBetween(aName,bName){
+    busy('Calcul distance…');
+    const a = await geocode(aName);
+    const b = await geocode(bName);
+    if(!a || !b){ fail('Lieu introuvable'); return; }
+    const aPt = [parseFloat(a.lon), parseFloat(a.lat)];
+    const bPt = [parseFloat(b.lon), parseFloat(b.lat)];
+    const d = haversine(aPt,bPt);
+    const km = Math.round(d/1000);
+    drawDistanceOverlay(aPt,bPt, `${km} km`);
+    map.fitBounds([aPt,bPt], { padding: 100, duration: 1200 });
+    ready(`${km} km entre ${aName} et ${bName}`);
+    last.textContent = `Dernière commande : distance ${aName} - ${bName} = ${km} km`;
+  }
+
+  async function handleCommand(raw){
+    if(!raw) return;
+    last.textContent = `Dernière commande : ${raw}`;
     const t = norm(raw);
-    if(t==='encore' && lastCommand){ handleCommand(lastCommand); return; }
-    lastCommand = raw; last.textContent = 'Dernière commande : '+raw;
 
-    // zoom
-    if(/\b(avance|approche|proche)\b/.test(t)) { busy('Avance…'); map.zoomIn({duration:300}); ready('OK: avance'); return; }
-    if(/\b(recule|eloigne|loin)\b/.test(t)) { busy('Recule…'); map.zoomOut({duration:300}); ready('OK: recule'); return; }
-    // pan
-    if(/\b(haut|monte)\b/.test(t)) { busy('Haut…'); map.panBy([0,-200]); ready('OK: haut'); return; }
-    if(/\b(bas|descend)\b/.test(t)) { busy('Bas…'); map.panBy([0,200]); ready('OK: bas'); return; }
-    if(/\b(gauche)\b/.test(t)) { busy('Gauche…'); map.panBy([-200,0]); ready('OK: gauche'); return; }
-    if(/\b(droite)\b/.test(t)) { busy('Droite…'); map.panBy([200,0]); ready('OK: droite'); return; }
-    // me
-    if(/centre(r)? sur moi|localise moi|ma position/.test(t)) { centerOnMe(); return; }
-    // mode
-    if(/mode (classique|vector)/.test(t)) { styleSel.value='streets'; applyStyle('streets'); ready('Mode classique'); return; }
-    if(/mode (topo|topographique)/.test(t)) { styleSel.value='topo'; applyStyle('topo'); ready('Mode topo'); return; }
-    if(/mode (raster|osm|simple)/.test(t)) { styleSel.value='osm'; applyStyle('osm'); ready('Mode OSM'); return; }
-    // distance
+    // --- ENCORE (prioritaire, n'écrase pas lastExec) ---
+    if(t==='encore' && lastExec){ handleCommand(lastExec); return; }
+
+    // --- Déplacements (plus robustes) ---
+    if(/\b(avance|zoome?\s*in|\+)\b/.test(t)){ lastExec=raw; map.zoomIn(); return ready('Zoom +'); }
+    if(/\b(recul(?:e|er|ez)?|zoome?\s*out|dezoome?|moins|-)\b/.test(t)){ // FIX: accepte "recul"
+      lastExec=raw; map.zoomOut(); return ready('Zoom -');
+    }
+    if(/\bgauche\b/.test(t)){ const c=map.getCenter(); lastExec=raw; map.easeTo({center:[c.lng-1,c.lat]}); return ready('Gauche'); }
+    if(/\bdroite\b/.test(t)){ const c=map.getCenter(); lastExec=raw; map.easeTo({center:[c.lng+1,c.lat]}); return ready('Droite'); }
+    if(/\b(haut|nord)\b/.test(t)){ const c=map.getCenter(); lastExec=raw; map.easeTo({center:[c.lng,c.lat+1]}); return ready('Haut'); }
+    if(/\b(bas|sud)\b/.test(t)){ const c=map.getCenter(); lastExec=raw; map.easeTo({center:[c.lng,c.lat-1]}); return ready('Bas'); }
+
+    // --- Style ---
+    const mode = t.match(/\b(?:mode|style)\s+(classique|topo|osm)\b/);
+    if(mode){ lastExec=raw; styleSel.value = (mode[1]==='classique'?'streets':mode[1]); styleSel.dispatchEvent(new Event('change')); return ready('Style changé'); }
+
+    // --- Distances ---
     const dist = t.match(/distance (?:entre|de) (.+) (?:et|a|à) (.+)$/);
-    if(dist) { distanceBetween(dist[1], dist[2]); return; }
-    // goto
+    if(dist) { lastExec=raw; distanceBetween(dist[1], dist[2]); return; }
+    // FIX: exiger des espaces autour du tiret (évite "états-unis")
+    const dash = raw.match(/^\s*(.+?)\s+[-–—]\s+(.+?)\s*$/);
+    if(dash) { lastExec=raw; distanceBetween(dash[1], dash[2]); return; }
+
+    // --- Aller à (sur commande explicite) ---
     const va = t.match(/\b(va a|aller a|centre|centrer sur|montre|affiche)\b\s+(.*)$/);
-    if(va && va[2]) { goToPlace(va[2]); return; }
-    if(t.split(' ').length <= 4) { goToPlace(t); return; }
+    if(va && va[2]) { lastExec=raw; goToPlace(va[2]); return; }
+
+    // --- Heuristique "nom de lieu court" (seulement si aucun mot-clé détecté) ---
+    // FIX: inclure 'recul' dans la liste d'exclusion pour ne pas géocoder "recul"
+    if(!/(avance|recul(?:e|er|ez)?|haut|bas|gauche|droite|mode|style|distance|encore)/.test(t) && t.split(' ').length <= 4){
+      lastExec=raw; goToPlace(t); return;
+    }
 
     fail('Commande non reconnue');
   }
 
-  // --- speech ---
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(SR){ const rec = new SR(); rec.lang='fr-FR'; rec.continuous=true; rec.interimResults=true; rec.onresult=(e)=>{ for(let i=e.resultIndex;i<e.results.length;i++){ const r=e.results[i]; const s=r[0].transcript.trim(); if(r.isFinal) handleCommand(s); } }; rec.onstart=()=>ready('Écoute active…'); rec.onerror=()=>fail('Erreur micro'); micBtn.onclick=()=>{ if(micBtn.classList.toggle('rec')){ rec.start(); ready('Écoute active…'); } else { rec.stop(); ready('Pause'); } }; } else { fail('Micro non supporté'); }
+  if(SR){
+    const rec = new SR(); rec.lang='fr-FR'; rec.continuous=true; rec.interimResults=true;
+    rec.onresult = (e)=>{
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const r=e.results[i];
+        const s=r[0].transcript.trim();
+        const sn=norm(s);
+        if(r.isFinal){
+          // FIX: ne pas écraser la dernière commande exécutable avec "encore"
+          if(sn==='encore'){ handleCommand('encore'); }
+          else { lastCommand=s; handleCommand(s); }
+        }
+      }
+    };
+    rec.onstart = ()=>{ ready('Écoute active…'); micDot.classList.add('on'); micBtn.textContent='⏸️ Pause micro'; micBtn.setAttribute('aria-pressed','true'); };
+    rec.onend = ()=>{ ready('Pause'); micDot.classList.remove('on'); micBtn.classList.remove('rec'); micBtn.textContent='🎙️ Activer micro'; micBtn.setAttribute('aria-pressed','false'); };
+    rec.onerror = ()=>{ fail('Erreur micro'); micDot.classList.add('err'); setTimeout(()=>micDot.classList.remove('err'),800); };
+    micBtn.onclick = ()=>{ const active = micBtn.classList.toggle('rec'); if(active){ rec.start(); } else { rec.stop(); } };
+  } else { fail('Micro non supporté'); }
 })();
 </script>
 </body>
